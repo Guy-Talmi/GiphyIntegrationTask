@@ -2,6 +2,8 @@ using GiphyIntegration.api.Controllers;
 using GiphyIntegration.api.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace GiphyIntegration.api.Tests;
 
@@ -26,7 +28,7 @@ public class GiphyIntegrationControllerTests
             "https://example.test/trending-second.gif"
         };
         var service = new RecordingGifService(expectedUrls);
-        var controller = new GiphyIntegrationController(service);
+        var controller = new GiphyIntegrationController(service, NullLogger<GiphyIntegrationController>.Instance);
         using var cancellation = new CancellationTokenSource();
 
         var action = await controller.GetTrending(cancellation.Token);
@@ -52,7 +54,7 @@ public class GiphyIntegrationControllerTests
             "https://example.test/search-second.gif"
         };
         var service = new RecordingGifService(expectedUrls);
-        var controller = new GiphyIntegrationController(service);
+        var controller = new GiphyIntegrationController(service, NullLogger<GiphyIntegrationController>.Instance);
         using var cancellation = new CancellationTokenSource();
 
         var action = await controller.Search(new SearchGifsRequest { SearchTerm = searchTerm }, cancellation.Token);
@@ -74,7 +76,8 @@ public class GiphyIntegrationControllerTests
     public async Task Actions_EmptyServiceResult_ReturnOkWithEmptyList(bool trending)
     {
         var service = new RecordingGifService(Array.Empty<string>());
-        var controller = new GiphyIntegrationController(service);
+        var logger = new RecordingLogger();
+        var controller = new GiphyIntegrationController(service, logger);
 
         var action = trending
             ? await controller.GetTrending(CancellationToken.None)
@@ -85,9 +88,10 @@ public class GiphyIntegrationControllerTests
         Assert.Empty(Assert.IsAssignableFrom<IReadOnlyList<string>>(response.Value));
         Assert.Equal(trending ? 1 : 0, service.TrendingCallCount);
         Assert.Equal(trending ? 0 : 1, service.SearchCallCount);
+        Assert.Empty(logger.Entries);
     }
 
-    // Verifies both actions map failures without returning exception messages or stack traces.
+    // Verifies safe responses and structured logs for both actions, without leaking diagnostic details.
     [Theory]
     [InlineData(true, "http", 502)]
     [InlineData(false, "http", 502)]
@@ -102,10 +106,10 @@ public class GiphyIntegrationControllerTests
     [InlineData(true, "argument", 500)]
     [InlineData(false, "argument", 400)]
     [InlineData(false, "internalArgument", 500)]
-    public async Task Actions_ServiceFailure_ReturnSafeProblemDetails(
+    public async Task Actions_ServiceFailure_ReturnSafeProblemDetailsAndLogs(
         bool trending, string failure, int expectedStatus)
     {
-        const string sensitiveMessage = "Private diagnostic: api_key=secret-test-value";
+        const string sensitiveMessage = "Private diagnostic: https://giphy.test/v1/gifs/search?api_key=secret-test-value";
         Exception exception = failure switch
         {
             "http" => new HttpRequestException(sensitiveMessage),
@@ -116,14 +120,18 @@ public class GiphyIntegrationControllerTests
             "internalArgument" => new ArgumentException(sensitiveMessage, "internalSetting"),
             _ => new InvalidOperationException(sensitiveMessage)
         };
-        var controller = new GiphyIntegrationController(new FailingGifService(exception))
+        var logger = new RecordingLogger();
+        var context = new DefaultHttpContext { TraceIdentifier = "test-request-trace" };
+        context.Request.Path = "/api/GiphyIntegration/search";
+        context.Request.QueryString = new QueryString("?q=private-search-term&api_key=secret-test-value");
+        var controller = new GiphyIntegrationController(new FailingGifService(exception), logger)
         {
-            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+            ControllerContext = new ControllerContext { HttpContext = context }
         };
 
         var action = trending
             ? await controller.GetTrending(CancellationToken.None)
-            : await controller.Search(new SearchGifsRequest { SearchTerm = "cats" }, CancellationToken.None);
+            : await controller.Search(new SearchGifsRequest { SearchTerm = "private-search-term" }, CancellationToken.None);
 
         var response = Assert.IsType<ObjectResult>(action.Result);
         Assert.Equal(expectedStatus, response.StatusCode);
@@ -135,9 +143,39 @@ public class GiphyIntegrationControllerTests
         Assert.DoesNotContain("secret-test-value", json);
         Assert.DoesNotContain("Private diagnostic", json);
         Assert.DoesNotContain("StackTrace", json);
+
+        if (expectedStatus == StatusCodes.Status400BadRequest)
+        {
+            Assert.Empty(logger.Entries);
+            return;
+        }
+
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(expectedStatus == 500 ? LogLevel.Error : LogLevel.Warning, entry.Level);
+        Assert.Null(entry.Exception);
+        Assert.Equal(4, entry.Fields.Count);
+        Assert.Equal(trending ? "Trending" : "Search", entry.Fields["Operation"]);
+        Assert.Equal("test-request-trace", entry.Fields["TraceId"]);
+        Assert.Equal(failure switch
+        {
+            "http" => "UpstreamHttpFailure",
+            "json" => "InvalidUpstreamResponse",
+            "timeout" => "UpstreamTimeout",
+            _ => "UnexpectedFailure"
+        }, entry.Fields["Failure"]);
+        Assert.Equal(
+            "GIF operation {Operation} failed: {Failure}. TraceId: {TraceId}",
+            entry.Fields["{OriginalFormat}"]);
+
+        var logContents = entry.Message + System.Text.Json.JsonSerializer.Serialize(entry.Fields);
+        Assert.DoesNotContain("secret-test-value", logContents);
+        Assert.DoesNotContain("private-search-term", logContents);
+        Assert.DoesNotContain("Private diagnostic", logContents);
+        Assert.DoesNotContain("https://giphy.test", logContents);
+        Assert.DoesNotContain("/api/GiphyIntegration/search", logContents);
     }
 
-    // Client cancellation must propagate, even when the exception also contains a timeout.
+    // Client cancellation propagates without logging a failure, even with an inner timeout.
     [Theory]
     [InlineData(true, false)]
     [InlineData(false, false)]
@@ -149,13 +187,38 @@ public class GiphyIntegrationControllerTests
         cancellation.Cancel();
         var exception = new OperationCanceledException("Cancelled",
             hasTimeout ? new TimeoutException() : null, cancellation.Token);
-        var controller = new GiphyIntegrationController(new FailingGifService(exception));
+        var logger = new RecordingLogger();
+        var controller = new GiphyIntegrationController(new FailingGifService(exception), logger);
 
         var thrown = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => trending
             ? controller.GetTrending(cancellation.Token)
             : controller.Search(new SearchGifsRequest { SearchTerm = "cats" }, cancellation.Token));
 
         Assert.Same(exception, thrown);
+        Assert.Empty(logger.Entries);
+    }
+
+    private sealed record LogEntry(
+        LogLevel Level,
+        string Message,
+        Exception? Exception,
+        IReadOnlyDictionary<string, object?> Fields);
+
+    private sealed class RecordingLogger : ILogger<GiphyIntegrationController>
+    {
+        public List<LogEntry> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
+            Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            var fields = Assert.IsAssignableFrom<IEnumerable<KeyValuePair<string, object?>>>(state);
+            Entries.Add(new LogEntry(logLevel, formatter(state, exception), exception,
+                fields.ToDictionary(field => field.Key, field => field.Value)));
+        }
     }
 
     // Argument guards throw synchronously; transport failures arrive through a faulted task.
