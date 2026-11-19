@@ -1,4 +1,5 @@
-﻿using GiphyIntegration.api.Services;
+using GiphyIntegration.api.Options;
+using GiphyIntegration.api.Services;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Internal;
 
@@ -17,7 +18,7 @@ public class CachedGifServiceTests
         using var locks = new GifCacheLocks();
 
         var inner = new CountingGifService();
-        var service = new CachedGifService(inner, cache, locks);
+        var service = new CachedGifService(inner, cache, locks, Microsoft.Extensions.Options.Options.Create(new GiphyOptions()));
 
         // Act
         var first = await service.SearchAsync("cats");
@@ -42,8 +43,8 @@ public class CachedGifServiceTests
 
         var inner = new ControlledGifService();
 
-        var firstService = new CachedGifService(inner, cache, locks);
-        var secondService = new CachedGifService(inner, cache, locks);
+        var firstService = new CachedGifService(inner, cache, locks, Microsoft.Extensions.Options.Options.Create(new GiphyOptions()));
+        var secondService = new CachedGifService(inner, cache, locks, Microsoft.Extensions.Options.Options.Create(new GiphyOptions()));
 
         // Act: keep the first fetch pending while starting the second request.
         var first = firstService.SearchAsync("cats", timeout.Token);
@@ -78,7 +79,7 @@ public class CachedGifServiceTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
         var inner = new FailOnceGifService();
-        var service = new CachedGifService(inner, cache, locks);
+        var service = new CachedGifService(inner, cache, locks, Microsoft.Extensions.Options.Options.Create(new GiphyOptions()));
 
         // Act: the first fetch fails.
         await Assert.ThrowsAsync<HttpRequestException>(
@@ -109,8 +110,8 @@ public class CachedGifServiceTests
 
         var inner = new ControlledGifService();
 
-        var firstService = new CachedGifService(inner, cache, locks);
-        var secondService = new CachedGifService(inner, cache, locks);
+        var firstService = new CachedGifService(inner, cache, locks, Microsoft.Extensions.Options.Options.Create(new GiphyOptions()));
+        var secondService = new CachedGifService(inner, cache, locks, Microsoft.Extensions.Options.Options.Create(new GiphyOptions()));
 
         // Start the first fetch and keep its response pending.
         var first = firstService.SearchAsync("cats", timeout.Token);
@@ -156,8 +157,8 @@ public class CachedGifServiceTests
             CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
 
         var inner = new ControlledGifService();
-        var firstService = new CachedGifService(inner, cache, locks);
-        var secondService = new CachedGifService(inner, cache, locks);
+        var firstService = new CachedGifService(inner, cache, locks, Microsoft.Extensions.Options.Options.Create(new GiphyOptions()));
+        var secondService = new CachedGifService(inner, cache, locks, Microsoft.Extensions.Options.Options.Create(new GiphyOptions()));
 
         var active = firstService.SearchAsync("cats", activeCancellation.Token);
         await inner.Started.WaitAsync(timeout.Token);
@@ -197,8 +198,8 @@ public class CachedGifServiceTests
                 firstGate, locks.GetLock($"giphy:search:{term}")));
 
         var inner = new ControlledGifService();
-        var firstService = new CachedGifService(inner, cache, locks);
-        var secondService = new CachedGifService(inner, cache, locks);
+        var firstService = new CachedGifService(inner, cache, locks, Microsoft.Extensions.Options.Options.Create(new GiphyOptions()));
+        var secondService = new CachedGifService(inner, cache, locks, Microsoft.Extensions.Options.Options.Create(new GiphyOptions()));
 
         var first = firstService.SearchAsync(firstTerm, timeout.Token);
         await inner.Started.WaitAsync(timeout.Token);
@@ -230,7 +231,7 @@ public class CachedGifServiceTests
         using var cache = new MemoryCache(new MemoryCacheOptions());
         using var locks = new GifCacheLocks();
         var inner = new RecordingGifService();
-        var service = new CachedGifService(inner, cache, locks);
+        var service = new CachedGifService(inner, cache, locks, Microsoft.Extensions.Options.Options.Create(new GiphyOptions()));
 
         var cats = await service.SearchAsync("cats");
         var dogs = await service.SearchAsync("dogs");
@@ -253,7 +254,7 @@ public class CachedGifServiceTests
         using var cache = new MemoryCache(new MemoryCacheOptions());
         using var locks = new GifCacheLocks();
         var inner = new RecordingGifService();
-        var service = new CachedGifService(inner, cache, locks);
+        var service = new CachedGifService(inner, cache, locks, Microsoft.Extensions.Options.Options.Create(new GiphyOptions()));
 
         var first = await service.GetTrendingAsync();
         var second = await service.GetTrendingAsync();
@@ -273,7 +274,7 @@ public class CachedGifServiceTests
         using var cache = new MemoryCache(new MemoryCacheOptions());
         using var locks = new GifCacheLocks();
         var inner = new RecordingGifService();
-        var service = new CachedGifService(inner, cache, locks);
+        var service = new CachedGifService(inner, cache, locks, Microsoft.Extensions.Options.Options.Create(new GiphyOptions()));
 
         IReadOnlyList<string> trending;
         IReadOnlyList<string> search;
@@ -300,12 +301,12 @@ public class CachedGifServiceTests
         Assert.Equal(1, inner.GetSearchCallCount("trending"));
     }
 
-    // Advances the cache's clock rather than waiting in real time.
+    // Uses configured lifetimes different from the defaults and advances a fake clock.
     // Verifies reuse just before expiration, a fresh fetch at expiration,
     // and reuse of the replacement entry. A cache hit must not extend the absolute lifetime.
     [Theory]
-    [InlineData(true, 5)]
-    [InlineData(false, 30)]
+    [InlineData(true, 7)]
+    [InlineData(false, 11)]
     public async Task CachedResult_AtExpiration_FetchesAndCachesFreshResult(
         bool trending,
         int expirationMinutes)
@@ -314,7 +315,7 @@ public class CachedGifServiceTests
         using var cache = new MemoryCache(new MemoryCacheOptions { Clock = clock });
         using var locks = new GifCacheLocks();
         var inner = new RecordingGifService();
-        var service = new CachedGifService(inner, cache, locks);
+        var service = new CachedGifService(inner, cache, locks, Microsoft.Extensions.Options.Options.Create(new GiphyOptions { TrendingCacheMinutes = 7, SearchCacheMinutes = 11 }));
 
         Task<IReadOnlyList<string>> FetchAsync() => trending
             ? service.GetTrendingAsync()

@@ -22,6 +22,12 @@ builder.Services
             Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var uri)
             && uri.Scheme == Uri.UriSchemeHttps,
         "Giphy:BaseUrl must be an absolute HTTPS URL.")
+    .Validate(
+        options => options.TrendingCacheMinutes > 0,
+        "Giphy:TrendingCacheMinutes must be greater than zero.")
+    .Validate(
+        options => options.SearchCacheMinutes > 0,
+        "Giphy:SearchCacheMinutes must be greater than zero.")
     .ValidateOnStart();
 
 builder.Services.AddMemoryCache();
@@ -42,7 +48,8 @@ builder.Services.AddTransient<IGifService>(serviceProvider =>
     new CachedGifService(
         serviceProvider.GetRequiredService<GiphyService>(),
         serviceProvider.GetRequiredService<IMemoryCache>(),
-        serviceProvider.GetRequiredService<GifCacheLocks>()));
+        serviceProvider.GetRequiredService<GifCacheLocks>(),
+        serviceProvider.GetRequiredService<IOptions<GiphyOptions>>()));
 
 var app = builder.Build();
 

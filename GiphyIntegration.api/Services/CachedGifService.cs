@@ -1,30 +1,35 @@
 ﻿using Microsoft.Extensions.Caching.Memory;
 
+using GiphyIntegration.api.Options;
+using Microsoft.Extensions.Options;
+
 namespace GiphyIntegration.api.Services;
 
 public sealed class CachedGifService : IGifService
 {
     private readonly IGifService _inner;
     private readonly IMemoryCache _cache;
-
     private readonly GifCacheLocks _locks;
+    private readonly GiphyOptions _options;
 
-    public CachedGifService(IGifService inner, IMemoryCache cache, GifCacheLocks locks)
+    public CachedGifService(IGifService inner, IMemoryCache cache, GifCacheLocks locks,
+        IOptions<GiphyOptions> options)
     {
         _inner = inner;
         _cache = cache;
         _locks = locks;
+        _options = options.Value;
     }
 
     public Task<IReadOnlyList<string>> GetTrendingAsync(CancellationToken cancellationToken = default)
     {
-        return GetOrFetchAsync("giphy:trending", TimeSpan.FromMinutes(5), _inner.GetTrendingAsync,
+        return GetOrFetchAsync("giphy:trending", TimeSpan.FromMinutes(_options.TrendingCacheMinutes), _inner.GetTrendingAsync,
                                 cancellationToken);
     }
 
     public Task<IReadOnlyList<string>> SearchAsync(string searchTerm, CancellationToken cancellationToken = default)
     {
-        return GetOrFetchAsync($"giphy:search:{searchTerm}", TimeSpan.FromMinutes(30),
+        return GetOrFetchAsync($"giphy:search:{searchTerm}", TimeSpan.FromMinutes(_options.SearchCacheMinutes),
                                token => _inner.SearchAsync(searchTerm, token),
                                cancellationToken);
     }
