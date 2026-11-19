@@ -8,8 +8,14 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 
 builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+    options.AddDocumentTransformer((document, context, cancellationToken) =>
+    {
+        document.Info.Title = "Giphy Integration API";
+        document.Info.Version = "v1";
+        document.Info.Description = "Retrieve trending GIF URLs or search for GIFs.";
+        return Task.CompletedTask;
+    }));
 
 builder.Services
     .AddOptions<GiphyOptions>()
@@ -57,6 +63,11 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/openapi/v1.json", "Giphy Integration API v1");
+        options.DocumentTitle = "Giphy Integration API";
+    });
 }
 
 app.UseHttpsRedirection();

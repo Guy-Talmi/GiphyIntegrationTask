@@ -16,6 +16,12 @@ public class GiphyIntegrationController : ControllerBase
     }
 
     [HttpGet("trending")]
+    [EndpointSummary("Get trending GIFs")]
+    [EndpointDescription("Returns up to 25 original GIF URLs from the first page of GIPHY trending results. Results are cached for the configured duration.")]
+    [ProducesResponseType(typeof(IReadOnlyList<string>), StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway, "application/problem+json")]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status504GatewayTimeout, "application/problem+json")]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError, "application/problem+json")]
     public Task<ActionResult<IReadOnlyList<string>>> GetTrending(CancellationToken cancellationToken)
     {
         return ExecuteAsync(
@@ -24,6 +30,13 @@ public class GiphyIntegrationController : ControllerBase
     }
 
     [HttpGet("search")]
+    [EndpointSummary("Search for GIFs")]
+    [EndpointDescription("Returns up to 25 original GIF URLs matching q. The search term is required, cannot be whitespace, and must not exceed 50 characters. No matches returns an empty array. Results are cached by search term.")]
+    [ProducesResponseType(typeof(IReadOnlyList<string>), StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway, "application/problem+json")]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status504GatewayTimeout, "application/problem+json")]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError, "application/problem+json")]
     public Task<ActionResult<IReadOnlyList<string>>> Search(
         [FromQuery] SearchGifsRequest request,
         CancellationToken cancellationToken)
