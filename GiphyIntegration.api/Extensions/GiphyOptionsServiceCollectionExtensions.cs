@@ -44,6 +44,9 @@ public static class GiphyOptionsServiceCollectionExtensions
                 .Validate(
                     options => IsRelativeApiPath(options.SearchApi),
                     "Giphy:SearchApi must be a relative path without a leading slash, query string, or fragment.")
+                .Validate(
+                    options => options.CacheMaxEntries > 0,
+                    "Giphy:CacheMaxEntries must be greater than zero.")
                 .ValidateOnStart();
 
             return services;

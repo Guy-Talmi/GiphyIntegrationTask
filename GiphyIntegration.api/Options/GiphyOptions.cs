@@ -13,6 +13,8 @@ public sealed class GiphyOptions
     public int HttpTimeoutSeconds { get; set; } = 10;
     public int MaxSearchTermLength { get; set; } = MaximumSupportedSearchTermLength;
     public int ResultsLimit { get; set; } = 25;
+    // Maximum result lists shared by trending and search, per application instance; not a byte limit.
+    public int CacheMaxEntries { get; set; } = 1000;
     public int TrendingCacheMinutes { get; set; } = 5;
     public int SearchCacheMinutes { get; set; } = 30;
 }

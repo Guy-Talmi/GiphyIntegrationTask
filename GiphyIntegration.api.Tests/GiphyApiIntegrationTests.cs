@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace GiphyIntegration.api.Tests;
 
@@ -19,6 +20,45 @@ public class GiphyApiIntegrationTests
     private const string RoutePrefix = "/api/GiphyIntegration";
     private const string ExpectedGifUrl = "https://example.test/integration.gif";
     private const string TestApiKey = "integration-test-only-key";
+
+    // Configuration controls the registered singleton cache, while overflow still returns HTTP 200.
+    // Unrelated IMemoryCache users must remain free to store entries without specifying a size.
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    public async Task GetEndpoints_FullConfiguredCache_StillReturnResults(int capacity)
+    {
+        using var factory = new GiphyApiFactory(cacheMaxEntries: capacity);
+        using var client = factory.CreateHttpsClient();
+        var cache = factory.Services.GetRequiredService<GiphyCache>();
+        Assert.Same(cache, factory.Services.GetRequiredService<GiphyCache>());
+
+        using var trending = await client.GetAsync(RoutePrefix + "/trending");
+        await AssertGifResponseAsync(trending);
+        using var cachedTrending = await client.GetAsync(RoutePrefix + "/trending");
+        await AssertGifResponseAsync(cachedTrending);
+        Assert.Single(factory.UpstreamRequests);
+
+        for (var index = 1; index < capacity; index++)
+        {
+            using var response = await client.GetAsync(RoutePrefix + $"/search?q=fill-{index}");
+            await AssertGifResponseAsync(response);
+        }
+        Assert.Equal(capacity, cache.Cache.Count);
+
+        for (var index = 0; index < 5; index++)
+        {
+            using var response = await client.GetAsync(RoutePrefix + $"/search?q=overflow-{index}");
+            await AssertGifResponseAsync(response);
+            Assert.InRange(cache.Cache.Count, 0, capacity);
+        }
+        Assert.Equal(capacity + 5, factory.UpstreamRequests.Count);
+
+        var sharedCache = factory.Services.GetRequiredService<IMemoryCache>();
+        Assert.NotSame(sharedCache, cache.Cache);
+        sharedCache.Set("unrelated-entry", "value");
+        Assert.Equal("value", sharedCache.Get<string>("unrelated-entry"));
+    }
 
     public static TheoryData<string> InvalidSearchPaths => new()
     {
@@ -240,7 +280,7 @@ public class GiphyApiIntegrationTests
     // Using the controller avoids changing production Program.cs just to expose Program to tests.
     private sealed class GiphyApiFactory(HttpStatusCode upstreamStatus = HttpStatusCode.OK,
         int maxSearchTermLength = 50, string environment = "Testing", int resultsLimit = 25,
-        string trendingApi = "gifs/trending", string searchApi = "gifs/search")
+        string trendingApi = "gifs/trending", string searchApi = "gifs/search", int cacheMaxEntries = 1000)
         : WebApplicationFactory<GiphyIntegrationController>
     {
         public ConcurrentQueue<UpstreamRequest> UpstreamRequests { get; } = new();
@@ -268,7 +308,8 @@ public class GiphyApiIntegrationTests
                     ["Giphy:MaxSearchTermLength"] = maxSearchTermLength.ToString(),
                     ["Giphy:ResultsLimit"] = resultsLimit.ToString(),
                     ["Giphy:TrendingApi"] = trendingApi,
-                    ["Giphy:SearchApi"] = searchApi
+                    ["Giphy:SearchApi"] = searchApi,
+                    ["Giphy:CacheMaxEntries"] = cacheMaxEntries.ToString()
                 }));
 
             // Keep the application's real service registrations; replace only the HTTP transport.

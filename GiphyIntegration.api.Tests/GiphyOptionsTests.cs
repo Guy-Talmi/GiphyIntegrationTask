@@ -76,6 +76,8 @@ public class GiphyOptionsTests
     [InlineData("ResultsLimit", -1)]
     [InlineData("ResultsLimit", 0)]
     [InlineData("ResultsLimit", 51)]
+    [InlineData("CacheMaxEntries", 0)]
+    [InlineData("CacheMaxEntries", -1)]
     public void StartupValidation_InvalidLimit_Fails(string setting, int limit)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(

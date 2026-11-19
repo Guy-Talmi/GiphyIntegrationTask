@@ -58,7 +58,13 @@ public sealed class CachedGifService : IGifService
 
             var urls = await fetch(cancellationToken);
 
-            _cache.Set(cacheKey, urls, expiration);
+            // Each result list consumes one entry. A full cache may decline to retain it;
+            // the caller still receives the successfully fetched result.
+            _cache.Set(cacheKey, urls, new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = expiration,
+                Size = 1
+            });
 
             return urls;
         }

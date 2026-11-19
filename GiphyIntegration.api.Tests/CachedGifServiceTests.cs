@@ -7,6 +7,77 @@ namespace GiphyIntegration.api.Tests;
 
 public class CachedGifServiceTests
 {
+    // Trending and search consume one shared entry budget. Overflow must not fail a fetch.
+    // Do not depend on which entries background compaction chooses to evict.
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    public async Task Cache_ConfiguredCapacity_BoundsEntriesAndReturnsOverflowResults(int capacity)
+    {
+        var options = Microsoft.Extensions.Options.Options.Create(
+            new GiphyOptions { CacheMaxEntries = capacity });
+        using var cache = new GiphyCache(options);
+        using var locks = new GifCacheLocks();
+        var inner = new RecordingGifService();
+        var service = new CachedGifService(inner, cache.Cache, locks, options);
+
+        var trending = await service.GetTrendingAsync();
+        for (var index = 1; index < capacity; index++)
+        {
+            await service.SearchAsync($"term-{index}");
+        }
+
+        Assert.Equal(capacity, cache.Cache.Count);
+        Assert.Equal(Assert.Single(trending), Assert.Single(await service.GetTrendingAsync()));
+        Assert.Equal(1, inner.TrendingCallCount);
+        await service.SearchAsync("term-1");
+        Assert.Equal(1, inner.GetSearchCallCount("term-1"));
+
+        for (var index = 0; index < 10; index++)
+        {
+            var term = $"overflow-{index}";
+            var result = await service.SearchAsync(term);
+
+            Assert.Equal($"https://example.test/search/{term}/1.gif", Assert.Single(result));
+            Assert.InRange(cache.Cache.Count, 0, capacity);
+        }
+
+        Assert.Single(await service.GetTrendingAsync());
+        Assert.InRange(cache.Cache.Count, 0, capacity);
+    }
+
+    // Separate locks allow both fetches to overlap, but the cache must still enforce one entry.
+    [Fact]
+    public async Task Cache_ConcurrentMisses_RespectCapacityAndReturnBothResults()
+    {
+        var options = Microsoft.Extensions.Options.Options.Create(
+            new GiphyOptions { CacheMaxEntries = 1 });
+        using var cache = new GiphyCache(options);
+        using var locks = new GifCacheLocks();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var inner = new ControlledGifService();
+        var firstService = new CachedGifService(inner, cache.Cache, locks, options);
+        var secondService = new CachedGifService(inner, cache.Cache, locks, options);
+
+        const string firstTerm = "cats";
+        var firstGate = locks.GetLock($"giphy:search:{firstTerm}");
+        var secondTerm = Enumerable.Range(0, 1024)
+            .Select(index => $"dogs-{index}")
+            .First(term => !ReferenceEquals(firstGate, locks.GetLock($"giphy:search:{term}")));
+
+        var first = firstService.SearchAsync(firstTerm, timeout.Token);
+        await inner.Started.WaitAsync(timeout.Token);
+        var second = secondService.SearchAsync(secondTerm, timeout.Token);
+        await inner.SecondStarted.WaitAsync(timeout.Token);
+        inner.Complete();
+
+        var results = await Task.WhenAll(first, second);
+
+        Assert.Equal(2, inner.SearchCallCount);
+        Assert.All(results, result => Assert.Equal("https://example.test/cat.gif", Assert.Single(result)));
+        Assert.InRange(cache.Cache.Count, 0, 1);
+    }
+
     // Searches for the same term twice in sequence using a fake service, without calling GIPHY.
     // Verifies that both calls return the expected URL and the inner service is called only once:
     // the first call populates the cache, and the second call reuses the cached result.
@@ -312,7 +383,7 @@ public class CachedGifServiceTests
         int expirationMinutes)
     {
         var clock = new ManualClock();
-        using var cache = new MemoryCache(new MemoryCacheOptions { Clock = clock });
+        using var cache = new MemoryCache(new MemoryCacheOptions { Clock = clock, SizeLimit = 1 });
         using var locks = new GifCacheLocks();
         var inner = new RecordingGifService();
         var service = new CachedGifService(inner, cache, locks, Microsoft.Extensions.Options.Options.Create(new GiphyOptions { TrendingCacheMinutes = 7, SearchCacheMinutes = 11 }));
