@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using System.ComponentModel.DataAnnotations;
 
+namespace GiphyIntegration.api.Models;
+
 public sealed class SearchGifsRequest : IValidatableObject
 {
     [FromQuery(Name = "q")]

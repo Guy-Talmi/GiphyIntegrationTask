@@ -1,5 +1,6 @@
 ﻿using GiphyIntegration.api.Services;
 using Microsoft.AspNetCore.Mvc;
+using GiphyIntegration.api.Models;
 using System.Text.Json;
 
 namespace GiphyIntegration.api.Controllers;

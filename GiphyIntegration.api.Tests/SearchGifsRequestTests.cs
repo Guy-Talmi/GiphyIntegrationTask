@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using GiphyIntegration.api.Options;
+using GiphyIntegration.api.Models;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GiphyIntegration.api.Tests;

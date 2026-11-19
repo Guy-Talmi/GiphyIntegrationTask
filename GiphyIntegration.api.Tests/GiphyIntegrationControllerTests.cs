@@ -1,5 +1,6 @@
 using GiphyIntegration.api.Controllers;
 using GiphyIntegration.api.Services;
+using GiphyIntegration.api.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;

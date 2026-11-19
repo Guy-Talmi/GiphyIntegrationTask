@@ -1,5 +1,6 @@
 using GiphyIntegration.api.Controllers;
 using GiphyIntegration.api.Options;
+using GiphyIntegration.api.Models;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
