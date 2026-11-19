@@ -9,7 +9,7 @@
 
         <div class="controls">
             <input id="search-term" name="searchTerm" type="search" [(ngModel)]="searchTerm"
-                placeholder="Try cats, celebration, or dancing" required />
+                placeholder="Search GIFs" aria-describedby="search-hint" required />
 
             <button type="submit" [disabled]="!searchTerm.trim()">
                 Search
@@ -19,6 +19,7 @@
                 Trending
             </button>
         </div>
+        <p id="search-hint" class="search-hint">Try cats, celebration, or dancing.</p>
     </form>
 
     <section aria-labelledby="results-heading" [attr.aria-busy]="loading()">
