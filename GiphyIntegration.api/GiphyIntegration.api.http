@@ -1,0 +1,9 @@
+@GiphyIntegration.api_HostAddress = https://localhost:7284
+
+### Get trending GIF URLs
+GET {{GiphyIntegration.api_HostAddress}}/api/GiphyIntegration/trending
+Accept: application/json
+
+### Search GIF URLs
+GET {{GiphyIntegration.api_HostAddress}}/api/GiphyIntegration/search?q=cats
+Accept: application/json
