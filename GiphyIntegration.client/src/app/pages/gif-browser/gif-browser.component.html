@@ -1,0 +1,46 @@
+<main class="page">
+    <header>
+        <h1>GIF Explorer</h1>
+        <p>Discover trending GIFs or search for something you love.</p>
+    </header>
+
+    <form class="search-form" (ngSubmit)="search()">
+        <label for="search-term">Search GIFs</label>
+
+        <div class="controls">
+            <input id="search-term" name="searchTerm" type="search" [(ngModel)]="searchTerm"
+                placeholder="Try cats, celebration, or dancing" required />
+
+            <button type="submit" [disabled]="!searchTerm.trim()">
+                Search
+            </button>
+
+            <button type="button" class="secondary" (click)="showTrending()">
+                Trending
+            </button>
+        </div>
+    </form>
+
+    <section aria-labelledby="results-heading" [attr.aria-busy]="loading()">
+        <h2 id="results-heading">{{ heading() }}</h2>
+
+        @if (loading()) {
+        <p role="status">Loading GIFs…</p>
+        } @else if (error()) {
+        <p class="error" role="alert">{{ error() }}</p>
+        } @else if (gifs().length === 0) {
+        <p role="status">No GIFs found. Try another search.</p>
+        } @else {
+        <p role="status">{{ gifs().length }} GIFs loaded.</p>
+
+        <div class="gallery">
+            @for (url of gifs(); track $index) {
+            <a [href]="url" target="_blank" rel="noopener noreferrer"
+                [attr.aria-label]="'Open GIF ' + ($index + 1) + ' in a new tab'">
+                <img [src]="url" [alt]="'GIF result ' + ($index + 1)" loading="lazy" />
+            </a>
+            }
+        </div>
+        }
+    </section>
+</main>
