@@ -40,7 +40,7 @@ public class GiphyIntegrationControllerTests
         Assert.Equal(cancellation.Token, service.TrendingCancellationToken);
     }
 
-    // Covers ordinary text, special characters, surrounding spaces, and the accepted 50-character boundary.
+    // Covers forwarding ordinary text, special characters, surrounding spaces, and a long search term.
     // The controller must pass the original search text and cancellation token to the service.
     [Theory]
     [MemberData(nameof(ValidSearchTerms))]

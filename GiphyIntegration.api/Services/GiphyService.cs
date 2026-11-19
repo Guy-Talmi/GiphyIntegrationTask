@@ -19,7 +19,7 @@ public sealed class GiphyService : IGifService
     public Task<IReadOnlyList<string>> GetTrendingAsync(CancellationToken cancellationToken = default)
     {
         var apiKey = Uri.EscapeDataString(_options.ApiKey);
-        var requestUri = $"gifs/trending?api_key={apiKey}&limit=25";
+        var requestUri = $"{_options.TrendingApi}?api_key={apiKey}&limit={_options.ResultsLimit}";
 
         return FetchGifUrlsAsync(requestUri, cancellationToken);
     }
@@ -31,17 +31,17 @@ public sealed class GiphyService : IGifService
             throw new ArgumentException("A search term is required.", nameof(searchTerm));
         }
 
-        if (searchTerm.Length > 50)
+        if (searchTerm.Length > _options.MaxSearchTermLength)
         {
             throw new ArgumentException(
-                "The search term must not exceed 50 characters.",
+                $"The search term must not exceed {_options.MaxSearchTermLength} characters.",
                 nameof(searchTerm));
         }
 
         var apiKey = Uri.EscapeDataString(_options.ApiKey);
         var query = Uri.EscapeDataString(searchTerm);
 
-        var requestUri = $"gifs/search?api_key={apiKey}&q={query}&limit=25";
+        var requestUri = $"{_options.SearchApi}?api_key={apiKey}&q={query}&limit={_options.ResultsLimit}";
 
         return FetchGifUrlsAsync(requestUri, cancellationToken);
     }

@@ -16,9 +16,11 @@ public class GiphyServiceTests
     // Captures the outgoing request before any network activity could occur.
     // Verifies GET, the complete endpoint path, and the exact required query parameters.
     [Theory]
-    [InlineData(true, "/v1/gifs/trending")]
-    [InlineData(false, "/v1/gifs/search")]
-    public async Task FetchAsync_UsesCorrectEndpointAndParameters(bool trending, string expectedPath)
+    [InlineData(true, "/v1/gifs/trending", 1)]
+    [InlineData(false, "/v1/gifs/search", 1)]
+    [InlineData(true, "/v1/gifs/trending", 50)]
+    [InlineData(false, "/v1/gifs/search", 50)]
+    public async Task FetchAsync_UsesCorrectEndpointAndParameters(bool trending, string expectedPath, int resultsLimit)
     {
         Uri? capturedUri = null;
         HttpMethod? capturedMethod = null;
@@ -30,7 +32,7 @@ public class GiphyServiceTests
             requests++;
             return Task.FromResult(JsonResponse(EmptyResponse));
         });
-        var service = CreateService(client);
+        var service = CreateService(client, resultsLimit: resultsLimit);
 
         await FetchAsync(service, trending);
 
@@ -43,7 +45,7 @@ public class GiphyServiceTests
 
         var query = QueryHelpers.ParseQuery(capturedUri.Query);
         Assert.Equal(ApiKey, Assert.Single(query["api_key"]));
-        Assert.Equal("25", Assert.Single(query["limit"]));
+        Assert.Equal(resultsLimit.ToString(), Assert.Single(query["limit"]));
         Assert.Equal(trending ? 2 : 3, query.Count);
 
         if (trending)
@@ -259,6 +261,29 @@ public class GiphyServiceTests
         Assert.False(exception.InnerException is TimeoutException);
     }
 
+    // Enforces the configured limit even when callers bypass the HTTP request model.
+    [Theory]
+    [InlineData(10)]
+    [InlineData(25)]
+    public async Task SearchAsync_ConfiguredLengthLimit_RejectsOversizedInputBeforeHttp(int limit)
+    {
+        var calls = 0;
+        using var client = CreateClient((_, _) =>
+        {
+            calls++;
+            return Task.FromResult(JsonResponse(EmptyResponse));
+        });
+        var service = CreateService(client, limit);
+
+        await service.SearchAsync(new string('a', limit));
+        var exception = Assert.Throws<ArgumentException>(
+            () => { _ = service.SearchAsync(new string('a', limit + 1)); });
+
+        Assert.Equal("searchTerm", exception.ParamName);
+        Assert.Contains($"must not exceed {limit} characters", exception.Message);
+        Assert.Equal(1, calls);
+    }
+
     private static Task<IReadOnlyList<string>> FetchAsync(
         GiphyService service,
         bool trending,
@@ -266,12 +291,15 @@ public class GiphyServiceTests
         ? service.GetTrendingAsync(cancellationToken)
         : service.SearchAsync("cats", cancellationToken);
 
-    private static GiphyService CreateService(HttpClient client) => new(
+    private static GiphyService CreateService(HttpClient client, int maxSearchTermLength = 50,
+        int resultsLimit = 25) => new(
         client,
         Microsoft.Extensions.Options.Options.Create(new GiphyOptions
         {
             BaseUrl = BaseAddress,
-            ApiKey = ApiKey
+            ApiKey = ApiKey,
+            MaxSearchTermLength = maxSearchTermLength,
+            ResultsLimit = resultsLimit
         }));
 
     private static HttpClient CreateClient(

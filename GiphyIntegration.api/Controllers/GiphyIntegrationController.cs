@@ -17,7 +17,7 @@ public class GiphyIntegrationController : ControllerBase
 
     [HttpGet("trending")]
     [EndpointSummary("Get trending GIFs")]
-    [EndpointDescription("Returns up to 25 original GIF URLs from the first page of GIPHY trending results. Results are cached for the configured duration.")]
+    [EndpointDescription("Returns original GIF URLs from the first page of GIPHY trending results, up to the configured results limit. Results are cached for the configured duration.")]
     [ProducesResponseType(typeof(IReadOnlyList<string>), StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway, "application/problem+json")]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status504GatewayTimeout, "application/problem+json")]
@@ -31,7 +31,7 @@ public class GiphyIntegrationController : ControllerBase
 
     [HttpGet("search")]
     [EndpointSummary("Search for GIFs")]
-    [EndpointDescription("Returns up to 25 original GIF URLs matching q. The search term is required, cannot be whitespace, and must not exceed 50 characters. No matches returns an empty array. Results are cached by search term.")]
+    [EndpointDescription("Returns original GIF URLs matching q, up to the configured results limit. The search term is required, cannot be whitespace, and must not exceed the configured length limit. No matches returns an empty array. Results are cached by search term.")]
     [ProducesResponseType(typeof(IReadOnlyList<string>), StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest, "application/problem+json")]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway, "application/problem+json")]
@@ -61,7 +61,7 @@ public class GiphyIntegrationController : ControllerBase
         catch (ArgumentException ex) when (isSearch && ex.ParamName == "searchTerm")
         {
             return Problem(statusCode: StatusCodes.Status400BadRequest,
-                title: "The search term is required and must not exceed 50 characters.");
+                title: "The search term is invalid.");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
