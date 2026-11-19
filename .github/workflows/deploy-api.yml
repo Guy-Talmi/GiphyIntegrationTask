@@ -4,6 +4,15 @@ on:
   push:
     branches:
       - master
+    paths:
+      - 'GiphyIntegration.api/**'
+      - 'GiphyIntegration.api.Tests/**'
+      - '.github/workflows/deploy-api.yml'
+      - 'GiphyIntegrationTask.slnx'
+      - 'global.json'
+      - '**/Directory.Build.*'
+      - '**/Directory.Packages.props'
+      - '**/[Nn]u[Gg]et.[Cc]onfig'
   workflow_dispatch:
 
 permissions:
