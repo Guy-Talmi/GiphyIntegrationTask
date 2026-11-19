@@ -40,10 +40,10 @@ public static class GiphyOptionsServiceCollectionExtensions
                     "Giphy:ResultsLimit must be between 1 and 50 results.")
                 .Validate(
                     options => IsRelativeApiPath(options.TrendingApi),
-                    "Giphy:TrendingApi must be a relative path without a leading slash, query string, or fragment.")
+                    "Giphy:TrendingApi must be a relative path without a leading slash, query string, fragment, or parent-directory segment ('..').")
                 .Validate(
                     options => IsRelativeApiPath(options.SearchApi),
-                    "Giphy:SearchApi must be a relative path without a leading slash, query string, or fragment.")
+                    "Giphy:SearchApi must be a relative path without a leading slash, query string, fragment, or parent-directory segment ('..').")
                 .Validate(
                     options => options.CacheMaxEntries > 0,
                     "Giphy:CacheMaxEntries must be greater than zero.")
@@ -58,5 +58,7 @@ public static class GiphyOptionsServiceCollectionExtensions
         && !path.StartsWith('/')
         && !path.Contains('\\')
         && !path.Contains('?')
-        && !path.Contains('#');
+        && !path.Contains('#')
+        // URI resolution also recognizes percent-encoded dots in parent-directory segments.
+        && path.Split('/').All(segment => Uri.UnescapeDataString(segment) != "..");
 }

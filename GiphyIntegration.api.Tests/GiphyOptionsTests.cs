@@ -49,6 +49,13 @@ public class GiphyOptionsTests
     [InlineData("SearchApi", "gifs/search?q=cats")]
     [InlineData("TrendingApi", "gifs/trending#fragment")]
     [InlineData("SearchApi", "gifs\\search")]
+    [InlineData("TrendingApi", "../gifs/trending")]
+    [InlineData("SearchApi", "../gifs/search")]
+    [InlineData("TrendingApi", "gifs/../trending")]
+    [InlineData("SearchApi", "gifs/search/..")]
+    [InlineData("TrendingApi", "%2e%2e/gifs/trending")]
+    [InlineData("SearchApi", ".%2E/gifs/search")]
+    [InlineData("SearchApi", "%2E./gifs/search")]
     public void StartupValidation_InvalidApiPath_Fails(string setting, string path)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(
@@ -66,6 +73,26 @@ public class GiphyOptionsTests
             () => provider.GetRequiredService<IStartupValidator>().Validate());
 
         Assert.Contains(exception.Failures, failure => failure.Contains($"Giphy:{setting}"));
+    }
+
+    // Dots inside a segment's name are valid; only complete parent-directory segments are rejected.
+    [Theory]
+    [InlineData("TrendingApi", "gifs/trending..preview")]
+    [InlineData("SearchApi", "gifs/search.v2")]
+    public void StartupValidation_ApiPathWithDotsInName_Succeeds(string setting, string path)
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?>
+            {
+                ["Giphy:ApiKey"] = "test-only-key",
+                ["Giphy:BaseUrl"] = "https://giphy.test/v1/",
+                [$"Giphy:{setting}"] = path
+            }).Build();
+        var services = new ServiceCollection();
+        services.AddGiphyOptions(configuration);
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<IStartupValidator>().Validate();
     }
 
     // Reject unusable limits and values beyond the upstream provider's supported maximum.
