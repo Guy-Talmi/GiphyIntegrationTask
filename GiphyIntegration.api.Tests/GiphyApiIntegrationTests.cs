@@ -73,6 +73,7 @@ public class GiphyApiIntegrationTests
     [InlineData("funny cats")]
     [InlineData("tom & jerry")]
     [InlineData("cats")]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     public async Task SearchRoute_BindsEncodedQueryAndForwardsOriginalText(string searchTerm)
     {
         using var factory = new GiphyApiFactory();
@@ -90,7 +91,7 @@ public class GiphyApiIntegrationTests
     }
 
     // Sends invalid queries through MVC rather than directly calling the action method.
-    // The HTTP pipeline must return 400 without reaching the fake upstream.
+    // Automatic model validation must return structured errors without reaching the fake upstream.
     [Theory]
     [MemberData(nameof(InvalidSearchPaths))]
     public async Task SearchRoute_InvalidInput_ReturnsBadRequestWithoutUpstreamCall(string path)
@@ -101,6 +102,11 @@ public class GiphyApiIntegrationTests
         using var response = await client.GetAsync(path);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        var problem = await response.Content.ReadFromJsonAsync<Microsoft.AspNetCore.Mvc.ValidationProblemDetails>();
+        Assert.NotNull(problem);
+        Assert.Equal(400, problem.Status);
+        Assert.NotEmpty(problem.Errors);
         Assert.Empty(factory.UpstreamRequests);
     }
 
@@ -132,6 +138,28 @@ public class GiphyApiIntegrationTests
         Assert.Empty(factory.UpstreamRequests);
     }
 
+    // Verifies real upstream HTTP failures become safe, serialized ProblemDetails responses.
+    [Theory]
+    [InlineData("/trending")]
+    [InlineData("/search?q=cats")]
+    public async Task GetEndpoints_UpstreamFailure_ReturnsBadGatewayProblem(string path)
+    {
+        using var factory = new GiphyApiFactory(HttpStatusCode.ServiceUnavailable);
+        using var client = factory.CreateHttpsClient();
+
+        using var response = await client.GetAsync(RoutePrefix + path);
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        var problem = await response.Content.ReadFromJsonAsync<Microsoft.AspNetCore.Mvc.ProblemDetails>();
+        Assert.NotNull(problem);
+        Assert.Equal(502, problem.Status);
+        Assert.Equal("Unable to retrieve results from GIPHY.", problem.Title);
+        Assert.Null(problem.Detail);
+        Assert.DoesNotContain(TestApiKey, await response.Content.ReadAsStringAsync());
+        Assert.Single(factory.UpstreamRequests);
+    }
+
     private static async Task AssertGifResponseAsync(HttpResponseMessage response)
     {
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -143,7 +171,8 @@ public class GiphyApiIntegrationTests
 
     // Any public type from the API assembly can identify its entry-point assembly.
     // Using the controller avoids changing production Program.cs just to expose Program to tests.
-    private sealed class GiphyApiFactory : WebApplicationFactory<GiphyIntegrationController>
+    private sealed class GiphyApiFactory(HttpStatusCode upstreamStatus = HttpStatusCode.OK)
+        : WebApplicationFactory<GiphyIntegrationController>
     {
         public ConcurrentQueue<UpstreamRequest> UpstreamRequests { get; } = new();
 
@@ -172,7 +201,7 @@ public class GiphyApiIntegrationTests
             // Keep the application's real service registrations; replace only the HTTP transport.
             builder.ConfigureTestServices(services =>
                 services.AddHttpClient<GiphyService>()
-                    .ConfigurePrimaryHttpMessageHandler(() => new FakeUpstreamHandler(UpstreamRequests)));
+                    .ConfigurePrimaryHttpMessageHandler(() => new FakeUpstreamHandler(UpstreamRequests, upstreamStatus)));
             builder.ConfigureLogging(logging => logging.ClearProviders());
         }
     }
@@ -180,7 +209,8 @@ public class GiphyApiIntegrationTests
     private sealed record UpstreamRequest(HttpMethod Method, Uri Uri);
 
     // All upstream responses are created in memory; no socket or real GIPHY key is needed.
-    private sealed class FakeUpstreamHandler(ConcurrentQueue<UpstreamRequest> requests) : HttpMessageHandler
+    private sealed class FakeUpstreamHandler(ConcurrentQueue<UpstreamRequest> requests,
+        HttpStatusCode upstreamStatus) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -192,7 +222,7 @@ public class GiphyApiIntegrationTests
             const string json = """
                 {"data":[{"images":{"original":{"url":"https://example.test/integration.gif"}}}]}
                 """;
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult(new HttpResponseMessage(upstreamStatus)
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
             });

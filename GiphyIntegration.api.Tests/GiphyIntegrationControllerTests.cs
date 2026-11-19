@@ -55,7 +55,7 @@ public class GiphyIntegrationControllerTests
         var controller = new GiphyIntegrationController(service);
         using var cancellation = new CancellationTokenSource();
 
-        var action = await controller.Search(searchTerm, cancellation.Token);
+        var action = await controller.Search(new SearchGifsRequest { SearchTerm = searchTerm }, cancellation.Token);
 
         var response = Assert.IsType<OkObjectResult>(action.Result);
         Assert.Equal(StatusCodes.Status200OK, response.StatusCode);
@@ -78,7 +78,7 @@ public class GiphyIntegrationControllerTests
 
         var action = trending
             ? await controller.GetTrending(CancellationToken.None)
-            : await controller.Search("cats", CancellationToken.None);
+            : await controller.Search(new SearchGifsRequest { SearchTerm = "cats" }, CancellationToken.None);
 
         var response = Assert.IsType<OkObjectResult>(action.Result);
         Assert.Equal(StatusCodes.Status200OK, response.StatusCode);
@@ -87,40 +87,95 @@ public class GiphyIntegrationControllerTests
         Assert.Equal(trending ? 0 : 1, service.SearchCallCount);
     }
 
-    // Null represents missing input at the action boundary; empty and whitespace values are also invalid.
-    // Rejecting input must happen before either service operation is called.
+    // Verifies both actions map failures without returning exception messages or stack traces.
     [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData("   ")]
-    [InlineData("\t\r\n")]
-    public async Task Search_MissingOrWhitespaceTerm_ReturnsBadRequestWithoutCallingService(string? searchTerm)
+    [InlineData(true, "http", 502)]
+    [InlineData(false, "http", 502)]
+    [InlineData(true, "json", 502)]
+    [InlineData(false, "json", 502)]
+    [InlineData(true, "timeout", 504)]
+    [InlineData(false, "timeout", 504)]
+    [InlineData(true, "unexpected", 500)]
+    [InlineData(false, "unexpected", 500)]
+    [InlineData(true, "unknownCancellation", 500)]
+    [InlineData(false, "unknownCancellation", 500)]
+    [InlineData(true, "argument", 500)]
+    [InlineData(false, "argument", 400)]
+    [InlineData(false, "internalArgument", 500)]
+    public async Task Actions_ServiceFailure_ReturnSafeProblemDetails(
+        bool trending, string failure, int expectedStatus)
     {
-        var service = new RecordingGifService(Array.Empty<string>());
-        var controller = new GiphyIntegrationController(service);
+        const string sensitiveMessage = "Private diagnostic: api_key=secret-test-value";
+        Exception exception = failure switch
+        {
+            "http" => new HttpRequestException(sensitiveMessage),
+            "json" => new System.Text.Json.JsonException(sensitiveMessage),
+            "timeout" => new TaskCanceledException(sensitiveMessage, new TimeoutException(sensitiveMessage)),
+            "unknownCancellation" => new OperationCanceledException(sensitiveMessage),
+            "argument" => new ArgumentException(sensitiveMessage, "searchTerm"),
+            "internalArgument" => new ArgumentException(sensitiveMessage, "internalSetting"),
+            _ => new InvalidOperationException(sensitiveMessage)
+        };
+        var controller = new GiphyIntegrationController(new FailingGifService(exception))
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
 
-        var action = await controller.Search(searchTerm, CancellationToken.None);
+        var action = trending
+            ? await controller.GetTrending(CancellationToken.None)
+            : await controller.Search(new SearchGifsRequest { SearchTerm = "cats" }, CancellationToken.None);
 
-        var response = Assert.IsType<BadRequestObjectResult>(action.Result);
-        Assert.Equal(StatusCodes.Status400BadRequest, response.StatusCode);
-        Assert.Equal(0, service.SearchCallCount);
-        Assert.Equal(0, service.TrendingCallCount);
+        var response = Assert.IsType<ObjectResult>(action.Result);
+        Assert.Equal(expectedStatus, response.StatusCode);
+        var problem = Assert.IsType<ProblemDetails>(response.Value);
+        Assert.Equal(expectedStatus, problem.Status);
+        Assert.False(string.IsNullOrWhiteSpace(problem.Title));
+        Assert.Null(problem.Detail);
+        var json = System.Text.Json.JsonSerializer.Serialize(problem);
+        Assert.DoesNotContain("secret-test-value", json);
+        Assert.DoesNotContain("Private diagnostic", json);
+        Assert.DoesNotContain("StackTrace", json);
     }
 
-    // Tests the first rejected length (51), paired with the accepted length (50) above.
-    [Fact]
-    public async Task Search_TermLongerThan50Characters_ReturnsBadRequestWithoutCallingService()
+    // Client cancellation must propagate, even when the exception also contains a timeout.
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public async Task Actions_CallerCancelled_PropagateCancellation(bool trending, bool hasTimeout)
     {
-        var service = new RecordingGifService(Array.Empty<string>());
-        var controller = new GiphyIntegrationController(service);
-        var searchTerm = new string('a', 51);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var exception = new OperationCanceledException("Cancelled",
+            hasTimeout ? new TimeoutException() : null, cancellation.Token);
+        var controller = new GiphyIntegrationController(new FailingGifService(exception));
 
-        var action = await controller.Search(searchTerm, CancellationToken.None);
+        var thrown = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => trending
+            ? controller.GetTrending(cancellation.Token)
+            : controller.Search(new SearchGifsRequest { SearchTerm = "cats" }, cancellation.Token));
 
-        var response = Assert.IsType<BadRequestObjectResult>(action.Result);
-        Assert.Equal(StatusCodes.Status400BadRequest, response.StatusCode);
-        Assert.Equal(0, service.SearchCallCount);
-        Assert.Equal(0, service.TrendingCallCount);
+        Assert.Same(exception, thrown);
+    }
+
+    // Argument guards throw synchronously; transport failures arrive through a faulted task.
+    private sealed class FailingGifService(Exception exception) : IGifService
+    {
+        public Task<IReadOnlyList<string>> GetTrendingAsync(CancellationToken cancellationToken = default)
+            => Fail();
+
+        public Task<IReadOnlyList<string>> SearchAsync(string searchTerm, CancellationToken cancellationToken = default)
+            => Fail();
+
+        private Task<IReadOnlyList<string>> Fail()
+        {
+            if (exception is ArgumentException)
+            {
+                throw exception;
+            }
+
+            return Task.FromException<IReadOnlyList<string>>(exception);
+        }
     }
 
     // Records which operation and arguments the controller uses; no HTTP or GIPHY calls are made.
