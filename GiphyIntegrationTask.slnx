@@ -1,3 +1,4 @@
 <Solution>
+  <Project Path="GiphyIntegration.api.Tests/GiphyIntegration.api.Tests.csproj" />
   <Project Path="GiphyIntegration.api/GiphyIntegration.api.csproj" />
 </Solution>
