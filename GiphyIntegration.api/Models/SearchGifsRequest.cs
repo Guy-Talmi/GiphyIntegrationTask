@@ -1,7 +1,7 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using System.ComponentModel.DataAnnotations;
-using GiphyIntegration.api.Options;
+﻿using GiphyIntegration.api.Options;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using System.ComponentModel.DataAnnotations;
 
 public sealed class SearchGifsRequest : IValidatableObject
 {
@@ -20,7 +20,7 @@ public sealed class SearchGifsRequest : IValidatableObject
         {
             yield return new ValidationResult(
                 $"The search term must not exceed {options.MaxSearchTermLength} characters.",
-                new[] { nameof(SearchTerm) });
+                [nameof(SearchTerm)]);
         }
     }
 }

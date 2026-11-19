@@ -1,6 +1,5 @@
-﻿using Microsoft.Extensions.Caching.Memory;
-
-using GiphyIntegration.api.Options;
+﻿using GiphyIntegration.api.Options;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 
 namespace GiphyIntegration.api.Services;
@@ -34,18 +33,13 @@ public sealed class CachedGifService : IGifService
                                cancellationToken);
     }
 
-    private async Task<IReadOnlyList<string>> GetOrFetchAsync(
-        string cacheKey,
-        TimeSpan expiration,
-        Func<CancellationToken, Task<IReadOnlyList<string>>> fetch,
-        CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<string>> GetOrFetchAsync(string cacheKey, TimeSpan expiration,
+                                                              Func<CancellationToken, Task<IReadOnlyList<string>>> fetch,
+                                                              CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (_cache.TryGetValue(
-                cacheKey,
-                out IReadOnlyList<string>? cached)
-            && cached is not null)
+        if (_cache.TryGetValue(cacheKey, out IReadOnlyList<string>? cached) && cached is not null)
         {
             return cached;
         }
@@ -57,8 +51,7 @@ public sealed class CachedGifService : IGifService
         try
         {
             // Another request may have populated the cache while we waited.
-            if (_cache.TryGetValue(cacheKey, out cached)
-                && cached is not null)
+            if (_cache.TryGetValue(cacheKey, out cached) && cached is not null)
             {
                 return cached;
             }

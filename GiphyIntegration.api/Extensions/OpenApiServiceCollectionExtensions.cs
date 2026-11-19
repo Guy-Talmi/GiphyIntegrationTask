@@ -1,8 +1,8 @@
+using GiphyIntegration.api.Controllers;
 using GiphyIntegration.api.Options;
+using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
-using GiphyIntegration.api.Controllers;
-using Microsoft.AspNetCore.Mvc.Controllers;
 
 namespace GiphyIntegration.api.Extensions;
 
@@ -31,8 +31,7 @@ public static class OpenApiServiceCollectionExtensions
                         return Task.CompletedTask;
                     }
 
-                    var giphyOptions = context.ApplicationServices
-                        .GetRequiredService<IOptions<GiphyOptions>>().Value;
+                    var giphyOptions = context.ApplicationServices.GetRequiredService<IOptions<GiphyOptions>>().Value;
                     operation.Description += $" The current maximum is {giphyOptions.ResultsLimit} GIF URLs per request.";
 
                     var searchParameter = context.Description.ParameterDescriptions.FirstOrDefault(
