@@ -1,6 +1,6 @@
-﻿using GiphyIntegration.api.Services;
+﻿using GiphyIntegration.api.Models;
+using GiphyIntegration.api.Services;
 using Microsoft.AspNetCore.Mvc;
-using GiphyIntegration.api.Models;
 using System.Text.Json;
 
 namespace GiphyIntegration.api.Controllers;
@@ -12,9 +12,7 @@ public class GiphyIntegrationController : ControllerBase
     private readonly IGifService _gifService;
     private readonly ILogger<GiphyIntegrationController> _logger;
 
-    public GiphyIntegrationController(
-        IGifService gifService,
-        ILogger<GiphyIntegrationController> logger)
+    public GiphyIntegrationController(IGifService gifService, ILogger<GiphyIntegrationController> logger)
     {
         _gifService = gifService;
         _logger = logger;
@@ -42,9 +40,7 @@ public class GiphyIntegrationController : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway, "application/problem+json")]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status504GatewayTimeout, "application/problem+json")]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError, "application/problem+json")]
-    public Task<ActionResult<IReadOnlyList<string>>> Search(
-        [FromQuery] SearchGifsRequest request,
-        CancellationToken cancellationToken)
+    public Task<ActionResult<IReadOnlyList<string>>> Search([FromQuery] SearchGifsRequest request, CancellationToken cancellationToken)
     {
         return ExecuteAsync(
             () => _gifService.SearchAsync(request.SearchTerm, cancellationToken),
@@ -53,10 +49,8 @@ public class GiphyIntegrationController : ControllerBase
     }
 
     // Execute the service call inside the try block to catch immediate and asynchronous failures.
-    private async Task<ActionResult<IReadOnlyList<string>>> ExecuteAsync(
-        Func<Task<IReadOnlyList<string>>> action,
-        CancellationToken cancellationToken,
-        bool isSearch = false)
+    private async Task<ActionResult<IReadOnlyList<string>>> ExecuteAsync(Func<Task<IReadOnlyList<string>>> action, CancellationToken cancellationToken,
+                                                                         bool isSearch = false)
     {
         try
         {

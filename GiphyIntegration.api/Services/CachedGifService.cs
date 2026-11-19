@@ -12,7 +12,7 @@ public sealed class CachedGifService : IGifService
     private readonly GiphyOptions _options;
 
     public CachedGifService(IGifService inner, IMemoryCache cache, GifCacheLocks locks,
-        IOptions<GiphyOptions> options)
+                            IOptions<GiphyOptions> options)
     {
         _inner = inner;
         _cache = cache;
