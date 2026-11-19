@@ -10,8 +10,6 @@ builder.Services.AddGiphyOpenApi();
 
 builder.Services.AddGiphyOptions(builder.Configuration);
 
-builder.Services.AddMemoryCache();
-
 builder.Services.AddGiphyHttpClient();
 
 builder.Services.AddCachedGifService();

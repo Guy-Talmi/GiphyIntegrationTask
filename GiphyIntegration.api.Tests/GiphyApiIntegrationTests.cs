@@ -28,7 +28,10 @@ public class GiphyApiIntegrationTests
     [InlineData(3)]
     public async Task GetEndpoints_FullConfiguredCache_StillReturnResults(int capacity)
     {
-        using var factory = new GiphyApiFactory(cacheMaxEntries: capacity);
+        using var factory = new GiphyApiFactory(cacheMaxEntries: capacity)
+        {
+            RegisterUnrelatedCache = true
+        };
         using var client = factory.CreateHttpsClient();
         var cache = factory.Services.GetRequiredService<GiphyCache>();
         Assert.Same(cache, factory.Services.GetRequiredService<GiphyCache>());
@@ -285,6 +288,8 @@ public class GiphyApiIntegrationTests
     {
         public ConcurrentQueue<UpstreamRequest> UpstreamRequests { get; } = new();
 
+        public bool RegisterUnrelatedCache { get; init; }
+
         public HttpClient CreateHttpsClient()
         {
             var client = CreateClient(new WebApplicationFactoryClientOptions
@@ -311,6 +316,12 @@ public class GiphyApiIntegrationTests
                     ["Giphy:SearchApi"] = searchApi,
                     ["Giphy:CacheMaxEntries"] = cacheMaxEntries.ToString()
                 }));
+
+            // Only the cache-isolation scenario adds a separate, general-purpose cache.
+            if (RegisterUnrelatedCache)
+            {
+                builder.ConfigureTestServices(services => services.AddMemoryCache());
+            }
 
             // Keep the application's real service registrations; replace only the HTTP transport.
             builder.ConfigureTestServices(services =>
