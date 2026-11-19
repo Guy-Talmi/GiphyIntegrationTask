@@ -17,8 +17,9 @@ public static class GiphyOptionsServiceCollectionExtensions
                 .Validate(
                     options =>
                         Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var uri)
-                        && uri.Scheme == Uri.UriSchemeHttps,
-                    "Giphy:BaseUrl must be an absolute HTTPS URL.")
+                        && uri.Scheme == Uri.UriSchemeHttps
+                        && uri.AbsolutePath.EndsWith('/'),
+                    "Giphy:BaseUrl must be an absolute HTTPS URL with a path ending in '/'.")
                 .Validate(
                     options => options.TrendingCacheMinutes > 0,
                     "Giphy:TrendingCacheMinutes must be greater than zero.")

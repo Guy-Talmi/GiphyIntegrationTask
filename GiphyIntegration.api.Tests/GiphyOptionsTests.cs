@@ -7,6 +7,38 @@ namespace GiphyIntegration.api.Tests;
 
 public class GiphyOptionsTests
 {
+    // A trailing slash preserves the version segment when resolving relative API paths.
+    [Theory]
+    [InlineData("https://giphy.test/v1/", true)]
+    [InlineData("https://giphy.test/v1", false)]
+    public void StartupValidation_BaseUrl_RequiresTrailingSlash(string baseUrl, bool isValid)
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?>
+            {
+                ["Giphy:ApiKey"] = "test-only-key",
+                ["Giphy:BaseUrl"] = baseUrl
+            }).Build();
+        var services = new ServiceCollection();
+        services.AddGiphyOptions(configuration);
+        using var provider = services.BuildServiceProvider();
+
+        var exception = Record.Exception(
+            () => provider.GetRequiredService<IStartupValidator>().Validate());
+
+        if (isValid)
+        {
+            Assert.Null(exception);
+        }
+        else
+        {
+            var validationException = Assert.IsType<OptionsValidationException>(exception);
+            Assert.Contains(
+                "Giphy:BaseUrl must be an absolute HTTPS URL with a path ending in '/'.",
+                validationException.Failures);
+        }
+    }
+
     // These paths are appended to BaseUrl; they must not replace its host or embed query parameters.
     [Theory]
     [InlineData("TrendingApi", "")]
