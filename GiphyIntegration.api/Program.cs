@@ -1,5 +1,4 @@
 using GiphyIntegration.api.Extensions;
-using GiphyIntegration.api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,8 +11,6 @@ builder.Services.AddGiphyOpenApi();
 builder.Services.AddGiphyOptions(builder.Configuration);
 
 builder.Services.AddMemoryCache();
-
-builder.Services.AddSingleton<GifCacheLocks>();
 
 builder.Services.AddGiphyHttpClient();
 

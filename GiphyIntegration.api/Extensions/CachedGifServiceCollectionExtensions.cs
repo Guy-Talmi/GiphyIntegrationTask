@@ -11,6 +11,7 @@ public static class CachedGifServiceCollectionExtensions
         public IServiceCollection AddCachedGifService()
         {
             services.AddSingleton<GiphyCache>();
+            services.AddSingleton<GifCacheLocks>();
 
             return services.AddTransient<IGifService>(serviceProvider =>
                 new CachedGifService(
